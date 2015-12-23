@@ -1,9 +1,7 @@
 import time
-import sys
 from selenium import webdriver
-from selenium.common.exceptions import WebDriverException, NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.keys import Keys
 
 from config_parser import StudentWebConfig
@@ -13,25 +11,33 @@ class StudentWeb(object):
 
     def __init__(self):
         self.config = StudentWebConfig().get_config()
-        #self.driver = webdriver.Firefox()
+
         self.driver = webdriver.PhantomJS(executable_path=self.config['phantom_js_executable_path'])
         self.driver.set_window_size(1500, 1000)
         self.driver.maximize_window()
-        self.driver.set_page_load_timeout(20)
-
-        self.default_implicit_wait = 10
-        self.driver.implicitly_wait(self.default_implicit_wait)
+        self._element_wait = 0.5  # Default timeout for _wait_for_element
+        self._implicit_wait = 20  # Default timeout for webdriver.implicity_wait and page_load_timeout
+        self.driver.set_page_load_timeout(self._implicit_wait)
+        self.driver.implicitly_wait(self._implicit_wait)
 
     def _shutdown(self):
+        """
+        Shutdown webdriver, and delete cookies
+        """
         self.driver.delete_all_cookies()
         self.driver.close()
         self.driver.quit()
 
     def get_results(self):
-        def ready_state_complete(d):
-            return d.execute_script("return document.readyState") == "complete"
-
+        """
+        Do click sequence through studentweb to locate and return grades
+        TODO: The get-requests need some error handling (TimeoutException and so on)
+        :return: The grades as a list of tuples for each subject
+        """
         self.driver.get('https://fsweb.no/studentweb/login.jsf?inst=' + self.config['institution'])
+
+        while self._wait_for_element((By.CLASS_NAME, 'login-name-pin')):
+            time.sleep(self._element_wait)
 
         self.driver.find_element_by_class_name('login-name-pin').click()
         login_element = self.driver.find_element_by_xpath("//*[@id='login-box']/div[3]/form[1]")
@@ -44,33 +50,20 @@ class StudentWeb(object):
 
         self.driver.find_element_by_id(login_element_id + ':login').send_keys(Keys.ENTER)
 
+        # TODO: Add timeout check for the following three while loops
         while self._wait_for_element((By.ID, 'messagesPanelGroup')):
-            time.sleep(0.5)
+            time.sleep(self._element_wait)
 
         while self._wait_for_element((By.LINK_TEXT, 'Resultater')):
-            time.sleep(0.5)
+            time.sleep(self._element_wait)
         self.driver.find_element_by_link_text('Resultater').click()
 
         while self._wait_for_element((By.TAG_NAME, 'tbody')):
-            time.sleep(0.5)
-
-        """
-        try:
-            WebDriverWait(self.driver, 10).until(ready_state_complete)
-        except WebDriverException:
-            print('WebDriverException: Timeout while waiting for /studentweb/resultater.jsf')
-        finally:
-            self._shutdown()
-            return
-        """
+            time.sleep(self._element_wait)
 
         results = []
+        # TODO: After the reformatting, this try/catch is most likely not needed
         try:
-            #WebDriverWait(self.driver, 10).until(lambda s: not self._is_element_present((By.ID, 'resultatlisteForm:HeleResultater:resultaterPanel')))
-            #  element = WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.ID, 'resultatlisteForm:HeleResultater:resultaterPanel')))
-            #  print(element)
-            #result_table = self.driver.find_element_by_id('resultatlisteForm:HeleResultater:resultaterPanel')
-            #result_table = self.driver.find_element_by_tag_name('tbody')
             result_table = self.driver.find_elements_by_tag_name('tr')
             for row in result_table:
                 if row.get_attribute('class') != 'none':
@@ -80,42 +73,44 @@ class StudentWeb(object):
                 course_info = tuple(cells[1].text.split('\n'))
                 course_id, course_name = course_info[0], course_info[1]
                 course_grade = cells[5].text
-
                 results.append((course_id, course_name, course_grade))
         except NoSuchElementException as e:
-            print(self.driver.current_url)
-            print('Could not find results table\n%s' % e)
+            print('Could not locate the results table at %s\n%s' % (self.driver.current_url, e))
         finally:
             self._shutdown()
             return results
 
     def _wait_for_element(self, *locator):
+        """
+        Function to check if an element has been located on page yet
+        :param locator: tuple of By.TYPE and search string
+        :return: Boolean telling if element is located or not
+        """
         try:
-            print("Waiting... " + str(c) + " for %s" % locator)
-            yes = self.driver.find_element(*locator)
-            print("Found!")
+            print('Waiting (' + str(c) + ') for %s' % locator)
+            element = self.driver.find_element(*locator)
             return True
-        except:
+        except Exception as e:
             return False
 
+    # TODO: This function may be removed later on
     def _is_element_present(self, *locator):
         self.driver.implicitly_wait(0)
         try:
             self.driver.find_element(*locator)
-            print('is present')
+            print('Element is present %s' % locator)
             return True
         except NoSuchElementException:
-            print('is not present')
+            print('Element is not present %s' % locator)
             return False
         finally:
-            # set back to where you once belonged
-            self.driver.implicitly_wait(self.default_implicit_wait)
+            self.driver.implicitly_wait(self._implicit_wait)
 
 if __name__ == "__main__":
     sw = StudentWeb()
     r = sw.get_results()
     for result in r:
-        print('%-8s\t%-60s\t%s' % result)
+        print('%-8s\t%-40s\t%s' % result)
 
 
 
