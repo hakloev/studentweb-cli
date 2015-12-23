@@ -1,0 +1,6 @@
+{
+  "pnr": "xxxxxxxxxxxxx",
+  "pin": "xxxx",
+  "institution": "FSNTNU",
+  "phantom_js_executable_path": "/usr/local/bin/phantomjs"
+}

@@ -1,0 +1,5 @@
+.idea/
+__pycache__/
+config.json
+ghostdriver.log*
+node_modules/
